@@ -4,7 +4,6 @@ A minimal Streamlit RAG app with Indexer and Answerer agents.
 """
 
 import os
-import glob
 import re
 import textwrap
 from typing import Optional
@@ -120,50 +119,86 @@ def chunk_text(text: str, max_tokens: int = 600, overlap: int = 120) -> list[str
     return filtered_chunks
 
 
-def load_docs(folder: str = "data") -> tuple[list[str], list[dict]]:
+def process_uploaded_file(uploaded_file) -> tuple[list[str], list[dict]]:
     """
-    Load and chunk all .txt and .md files from the specified folder.
+    Process an uploaded file and chunk it.
     
     Args:
-        folder: Path to folder containing documents
+        uploaded_file: Streamlit UploadedFile object
     
     Returns:
         Tuple of (chunks, metadata) where metadata is list of dicts with 'source' and 'chunk_id'
     """
+    if uploaded_file is None:
+        print(f"[Indexer] No file uploaded")
+        return [], []
+    
+    try:
+        # Read file content
+        if uploaded_file.type == "text/plain" or uploaded_file.name.endswith('.txt'):
+            content = str(uploaded_file.read(), "utf-8")
+        elif uploaded_file.type == "text/markdown" or uploaded_file.name.endswith('.md'):
+            content = str(uploaded_file.read(), "utf-8")
+        else:
+            # Try to read as text anyway
+            content = str(uploaded_file.read(), "utf-8")
+        
+        filename = uploaded_file.name
+        print(f"[Indexer] Processing uploaded file '{filename}' ({len(content)} characters)")
+        
+        chunks = []
+        metadata = []
+        
+        # Chunk the text
+        file_chunks = chunk_text(content)
+        print(f"[Indexer] Processed '{filename}': {len(file_chunks)} chunks created")
+        
+        for i, chunk in enumerate(file_chunks):
+            chunks.append(chunk)
+            metadata.append({
+                'source': filename,
+                'chunk_id': i
+            })
+        
+        print(f"[Indexer] Total chunks created: {len(chunks)}")
+        return chunks, metadata
+    
+    except Exception as e:
+        print(f"[Indexer] ERROR processing file: {e}")
+        raise
+
+
+def process_text_input(text: str, source_name: str = "User Input") -> tuple[list[str], list[dict]]:
+    """
+    Process user-provided text input and chunk it.
+    
+    Args:
+        text: Input text to process
+        source_name: Name to use as source in metadata
+    
+    Returns:
+        Tuple of (chunks, metadata) where metadata is list of dicts with 'source' and 'chunk_id'
+    """
+    if not text or not text.strip():
+        print(f"[Indexer] No text provided")
+        return [], []
+    
+    print(f"[Indexer] Processing user input text ({len(text)} characters)")
     chunks = []
     metadata = []
     
-    if not os.path.exists(folder):
-        print(f"[Indexer] Folder '{folder}' does not exist")
-        return chunks, metadata
+    # Chunk the text
+    file_chunks = chunk_text(text)
+    print(f"[Indexer] Processed '{source_name}': {len(file_chunks)} chunks created")
     
-    # Find all .txt and .md files
-    txt_files = glob.glob(os.path.join(folder, "*.txt"))
-    md_files = glob.glob(os.path.join(folder, "*.md"))
-    all_files = txt_files + md_files
-    print(f"[Indexer] Found {len(all_files)} files ({len(txt_files)} .txt, {len(md_files)} .md)")
+    for i, chunk in enumerate(file_chunks):
+        chunks.append(chunk)
+        metadata.append({
+            'source': source_name,
+            'chunk_id': i
+        })
     
-    for file_path in all_files:
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            file_chunks = chunk_text(content)
-            filename = os.path.basename(file_path)
-            print(f"[Indexer] Processed '{filename}': {len(file_chunks)} chunks created")
-            
-            for i, chunk in enumerate(file_chunks):
-                chunks.append(chunk)
-                metadata.append({
-                    'source': filename,
-                    'chunk_id': i
-                })
-        except Exception as e:
-            print(f"[Indexer] ERROR reading {file_path}: {e}")
-            st.warning(f"Error reading {file_path}: {e}")
-            continue
-    
-    print(f"[Indexer] Total chunks loaded: {len(chunks)} from {len(set(m['source'] for m in metadata))} file(s)")
+    print(f"[Indexer] Total chunks created: {len(chunks)}")
     return chunks, metadata
 
 
@@ -313,16 +348,29 @@ def llm_chat(prompt: str) -> str:
 
 
 @st.cache_data
-def build_index() -> tuple[Optional[faiss.Index], list[str], list[dict]]:
+def build_index(text_input: str = None, uploaded_file_content: tuple = None) -> tuple[Optional[faiss.Index], list[str], list[dict]]:
     """
-    Build FAISS index from documents in /data folder.
-    Cached to avoid rebuilding on every rerun.
+    Build FAISS index from user-provided text input or uploaded file.
+    Cached based on input to avoid rebuilding when input hasn't changed.
+    
+    Args:
+        text_input: User-provided text to index (optional)
+        uploaded_file_content: Tuple of (filename, content) from uploaded file (optional)
     
     Returns:
         Tuple of (index, chunks, metadata). Index is None if no documents found.
     """
     print("[Indexer] ===== Starting index build =====")
-    chunks, metadata = load_docs("data")
+    
+    # Prioritize uploaded file if both are provided
+    if uploaded_file_content:
+        filename, content = uploaded_file_content
+        chunks, metadata = process_text_input(content, source_name=filename)
+    elif text_input:
+        chunks, metadata = process_text_input(text_input)
+    else:
+        print("[Indexer] No input provided")
+        return None, [], []
     
     if not chunks:
         print("[Indexer] No chunks found, returning None")
@@ -463,10 +511,12 @@ st.caption("RAG-powered Q&A with Indexer and Answerer agents")
 
 with st.expander("📖 Instructions", expanded=False):
     st.markdown("""
-    1. Place `.txt` or `.md` files in the `/data` folder
-    2. The Indexer will automatically process and index them
-    3. Ask questions about your documents
+    1. **Upload a file** (`.txt` or `.md`) or **paste text** in the text area
+    2. Click **"Index Document"** to process and index the content
+    3. Ask questions about your document
     4. The Answerer will retrieve relevant chunks and provide answers with citations
+    
+    💡 **Tip**: If both file and text are provided, the uploaded file takes priority.
     """)
 
 # Check API key
@@ -481,43 +531,143 @@ elif PROVIDER == "gemini":
         st.info("Add to `.env` file: `GOOGLE_API_KEY=your_key`\n\nOr set as environment variable:\nWindows: `setx GOOGLE_API_KEY your_key`\nUnix/Mac: `export GOOGLE_API_KEY=your_key`")
         st.stop()
 
-# Build index
-index, chunks, metadata = build_index()
+# Initialize session state
+if 'text_input' not in st.session_state:
+    st.session_state.text_input = ""
+if 'uploaded_file' not in st.session_state:
+    st.session_state.uploaded_file = None
+if 'index_built' not in st.session_state:
+    st.session_state.index_built = False
+if 'index' not in st.session_state:
+    st.session_state.index = None
+if 'chunks' not in st.session_state:
+    st.session_state.chunks = []
+if 'metadata' not in st.session_state:
+    st.session_state.metadata = []
 
-if index is None:
-    st.error("📁 No documents found in `/data` folder.")
-    st.info("Add `.txt` or `.md` files to the `/data` folder and refresh the page.")
-    st.stop()
+# Document input section
+st.subheader("📄 Document Input")
 
-st.success(f"✅ Index ready: {len(chunks)} chunks from {len(set(m['source'] for m in metadata))} file(s)")
+# Create tabs for file upload and text input
+tab1, tab2 = st.tabs(["📁 Upload File", "✍️ Paste Text"])
+
+with tab1:
+    uploaded_file = st.file_uploader(
+        "Upload a document file",
+        type=['txt', 'md'],
+        help="Supported formats: .txt and .md files"
+    )
+    
+    if uploaded_file is not None:
+        st.session_state.uploaded_file = uploaded_file
+        st.info(f"📄 File loaded: **{uploaded_file.name}** ({uploaded_file.size:,} bytes)")
+
+with tab2:
+    text_input = st.text_area(
+        "Enter your document text:",
+        value=st.session_state.text_input,
+        height=200,
+        placeholder="Paste or type your document content here...",
+        help="You can paste text from any source. The Indexer will automatically chunk and process it."
+    )
+    st.session_state.text_input = text_input
+
+# Index button
+st.divider()
+col1, col2 = st.columns([1, 4])
+with col1:
+    index_button = st.button("Index Document", type="primary")
+
+# Build index when button is clicked
+if index_button:
+    # Prioritize uploaded file if both are provided
+    if st.session_state.uploaded_file is not None:
+        try:
+            # Read file content
+            if st.session_state.uploaded_file.type == "text/plain" or st.session_state.uploaded_file.name.endswith('.txt'):
+                file_content = str(st.session_state.uploaded_file.read(), "utf-8")
+            else:
+                file_content = str(st.session_state.uploaded_file.read(), "utf-8")
+            
+            # Reset file pointer for potential re-read
+            st.session_state.uploaded_file.seek(0)
+            
+            with st.spinner("Building index from uploaded file..."):
+                index, chunks, metadata = build_index(
+                    uploaded_file_content=(st.session_state.uploaded_file.name, file_content)
+                )
+                if index is not None:
+                    st.session_state.index = index
+                    st.session_state.chunks = chunks
+                    st.session_state.metadata = metadata
+                    st.session_state.index_built = True
+                    st.success(f"✅ Index ready: {len(chunks)} chunks created from '{st.session_state.uploaded_file.name}'")
+                else:
+                    st.error("Failed to build index. Please check your file.")
+                    st.session_state.index_built = False
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
+            print(f"[Indexer] ERROR: {e}")
+            st.session_state.index_built = False
+    
+    elif text_input and text_input.strip():
+        with st.spinner("Building index from text input..."):
+            index, chunks, metadata = build_index(text_input=text_input)
+            if index is not None:
+                st.session_state.index = index
+                st.session_state.chunks = chunks
+                st.session_state.metadata = metadata
+                st.session_state.index_built = True
+                st.success(f"✅ Index ready: {len(chunks)} chunks created")
+            else:
+                st.error("Failed to build index. Please check your input.")
+                st.session_state.index_built = False
+    else:
+        st.warning("Please upload a file or enter some text to index.")
+        st.session_state.index_built = False
+
+# Show status if index is already built
+if st.session_state.index_built and st.session_state.index is not None:
+    st.info(f"📊 Current index: {len(st.session_state.chunks)} chunks ready for querying")
 
 # Query interface
 st.divider()
-query = st.text_input("Ask a question about your docs:", placeholder="e.g., What is the main topic?")
+st.subheader("❓ Ask Questions")
 
-if st.button("Ask", type="primary"):
-    if not query.strip():
-        st.warning("Please enter a question.")
-    else:
-        with st.spinner("Retrieving relevant chunks..."):
-            results = retrieve(index, chunks, metadata, query, k=4)
-        
-        if results:
-            st.subheader("📚 Retrieved Chunks")
-            for result in results:
-                with st.container():
-                    st.markdown(f"**Rank {result['rank']}** | Source: `{result['meta']['source']}` | Score: {result['score']:.4f}")
-                    # Shorten text for display
-                    shortened = textwrap.shorten(result['text'], width=600, placeholder="...")
-                    st.code(shortened, language=None)
-            
-            st.divider()
-            st.subheader("💡 Answer")
-            
-            with st.spinner("Generating answer..."):
-                answer = answer_with_citations(query, results)
-            
-            st.markdown(answer)
+if not st.session_state.index_built or st.session_state.index is None:
+    st.info("👆 Please index a document first before asking questions.")
+else:
+    query = st.text_input("Ask a question about your document:", placeholder="e.g., What is the main topic?")
+
+    if st.button("Ask", type="primary"):
+        if not query.strip():
+            st.warning("Please enter a question.")
         else:
-            st.warning("No results found.")
+            with st.spinner("Retrieving relevant chunks..."):
+                results = retrieve(
+                    st.session_state.index, 
+                    st.session_state.chunks, 
+                    st.session_state.metadata, 
+                    query, 
+                    k=4
+                )
+            
+            if results:
+                st.subheader("📚 Retrieved Chunks")
+                for result in results:
+                    with st.container():
+                        st.markdown(f"**Rank {result['rank']}** | Source: `{result['meta']['source']}` | Score: {result['score']:.4f}")
+                        # Shorten text for display
+                        shortened = textwrap.shorten(result['text'], width=600, placeholder="...")
+                        st.code(shortened, language=None)
+                
+                st.divider()
+                st.subheader("💡 Answer")
+                
+                with st.spinner("Generating answer..."):
+                    answer = answer_with_citations(query, results)
+                
+                st.markdown(answer)
+            else:
+                st.warning("No results found.")
 
