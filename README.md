@@ -73,13 +73,32 @@ PROVIDER = "gemini"  # or "openai"
 
 ### Running the App
 
-1. Place your `.txt` or `.md` files in the `/data` folder
+1. Upload a file (`.txt` or `.md`) or paste text in the app
 2. Run the app:
    ```bash
    streamlit run app.py
    ```
-3. The Indexer will automatically process your documents on first run
+3. Click "Index Document" to process your content
 4. Ask questions in the query box!
+
+### Generating Architecture Flowchart
+
+To generate a visual flowchart of the architecture:
+
+**Option 1: Using Graphviz (recommended)**
+```bash
+pip install graphviz
+# Also install Graphviz system package: https://graphviz.org/download/
+python generate_flowchart.py
+```
+
+**Option 2: Using Matplotlib**
+```bash
+pip install matplotlib
+python generate_flowchart.py
+```
+
+The script will generate PNG images of the architecture flowchart.
 
 ## Project Structure
 
@@ -91,13 +110,55 @@ mini-doc-faq/
 └── README.md       # This file
 ```
 
-## How It Works
+## Architecture
+
+### System Flow
+
+```mermaid
+flowchart TD
+    Start([User Starts App]) --> CheckAPI{API Key<br/>Available?}
+    CheckAPI -->|No| Error[Show Error Message]
+    CheckAPI -->|Yes| Input{Input Method}
+    
+    Input -->|File Upload| File[Upload .txt/.md File]
+    Input -->|Text Paste| Text[Paste Text]
+    
+    File --> IndexBtn[Click Index Document]
+    Text --> IndexBtn
+    
+    IndexBtn --> Indexer[Indexer Agent]
+    
+    Indexer --> Chunk[Chunk Text by Sentences<br/>with Overlap]
+    Chunk --> Embed[Generate Embeddings<br/>OpenAI/Gemini]
+    Embed --> Normalize[Normalize Embeddings<br/>L2 Normalization]
+    Normalize --> FAISS[Build FAISS Index<br/>IndexFlatIP]
+    FAISS --> Cache[Cache Index]
+    Cache --> Ready[Index Ready]
+    
+    Ready --> Query{User Query}
+    Query --> Answerer[Answerer Agent]
+    
+    Answerer --> QEmbed[Embed Query]
+    QEmbed --> Search[Search FAISS Index<br/>Top-K Retrieval]
+    Search --> Retrieve[Retrieve Top 4 Chunks<br/>with Scores]
+    Retrieve --> LLM[Generate Answer<br/>with LLM]
+    LLM --> Citations[Add Inline Citations<br/>[1], [2], etc.]
+    Citations --> Display[Display Answer]
+    
+    style Indexer fill:#e1f5ff
+    style Answerer fill:#fff4e1
+    style FAISS fill:#e8f5e9
+    style LLM fill:#fce4ec
+```
+
+### Component Details
 
 1. **Indexer Agent**: 
-   - Scans `/data` for `.txt` and `.md` files
-   - Chunks documents by sentences with overlap
+   - Accepts file upload or text input
+   - Chunks documents by sentences with overlap (~120 words)
    - Generates embeddings using the configured provider
    - Builds a FAISS index for fast similarity search
+   - Caches index in session state
 
 2. **Answerer Agent**:
    - Embeds the user's query

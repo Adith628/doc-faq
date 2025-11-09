@@ -1,0 +1,61 @@
+// Mini Doc-FAQ Agent Architecture
+digraph {
+	rankdir=TB size="12,16"
+	node [shape=box style="rounded,filled"]
+	start [label="User Starts App" fillcolor="#e3f2fd" shape=ellipse]
+	check_api [label="API Key
+Available?" fillcolor="#fff9c4" shape=diamond]
+	error [label="Show Error
+Message" fillcolor="#ffcdd2"]
+	input [label="Input Method" fillcolor="#fff9c4" shape=diamond]
+	file [label="Upload .txt/.md
+File" fillcolor="#c8e6c9"]
+	text [label="Paste Text" fillcolor="#c8e6c9"]
+	index_btn [label="Click Index
+Document" fillcolor="#bbdefb"]
+	indexer [label="Indexer Agent" fillcolor="#e1f5ff" style="rounded,filled,bold"]
+	chunk [label="Chunk Text by
+Sentences with Overlap" fillcolor="#b3e5fc"]
+	embed [label="Generate Embeddings
+(OpenAI/Gemini)" fillcolor="#81d4fa"]
+	normalize [label="Normalize Embeddings
+(L2 Normalization)" fillcolor="#4fc3f7"]
+	faiss [label="Build FAISS Index
+(IndexFlatIP)" fillcolor="#e8f5e9"]
+	cache [label="Cache Index" fillcolor="#c5e1a5"]
+	ready [label="Index Ready" fillcolor="#a5d6a7" shape=ellipse]
+	query [label="User Query" fillcolor="#fff9c4" shape=diamond]
+	answerer [label="Answerer Agent" fillcolor="#fff4e1" style="rounded,filled,bold"]
+	qembed [label="Embed Query" fillcolor="#ffe0b2"]
+	search [label="Search FAISS Index
+(Top-K Retrieval)" fillcolor="#ffcc80"]
+	retrieve [label="Retrieve Top 4 Chunks
+with Scores" fillcolor="#ffb74d"]
+	llm [label="Generate Answer
+with LLM" fillcolor="#fce4ec"]
+	citations [label="Add Inline Citations
+[1], [2], etc." fillcolor="#f8bbd0"]
+	display [label="Display Answer" fillcolor="#f48fb1" shape=ellipse]
+	start -> check_api
+	check_api -> error [label=No]
+	check_api -> input [label=Yes]
+	input -> file [label=File]
+	input -> text [label=Text]
+	file -> index_btn
+	text -> index_btn
+	index_btn -> indexer
+	indexer -> chunk
+	chunk -> embed
+	embed -> normalize
+	normalize -> faiss
+	faiss -> cache
+	cache -> ready
+	ready -> query
+	query -> answerer
+	answerer -> qembed
+	qembed -> search
+	search -> retrieve
+	retrieve -> llm
+	llm -> citations
+	citations -> display
+}
