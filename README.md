@@ -142,7 +142,7 @@ flowchart TD
     QEmbed --> Search[Search FAISS Index<br/>Top-K Retrieval]
     Search --> Retrieve[Retrieve Top 4 Chunks<br/>with Scores]
     Retrieve --> LLM[Generate Answer<br/>with LLM]
-    LLM --> Citations[Add Inline Citations<br/>[1], [2], etc.]
+    LLM --> Citations["Add Inline Citations<br/>Citations 1, 2, etc."]
     Citations --> Display[Display Answer]
     
     style Indexer fill:#e1f5ff
