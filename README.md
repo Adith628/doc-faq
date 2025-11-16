@@ -61,7 +61,6 @@ export GOOGLE_API_KEY="your-api-key-here"
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-**Note:** After setting environment variables in Windows, you may need to restart your terminal/IDE.
 
 ### Configuration
 
